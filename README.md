@@ -18,9 +18,12 @@ I had tried using the tab completion API method with this but was struggling wit
 `nexter` goroutine still was blocking on ReadRune() and thus I could not have complete control of Stdio 
 (I might have given up too early though).
 
-I am labeling this with my own v1.0.0 and have deleted the tags of the previous "github.com/peterh/liner"
-repo from which I cloned this.  I am not sure if this is exactly correct with the semver golang standard
-but I didn't want to imply that this was in anyway related to the repository from which I forked.
+**USING** 
+Unfortunately the go module proxies grabbed this before I could delete the tags properly, so to use:
+`go get github.com/reverendpaco/liner@v1.0.0`
+or if that doesn't work:
+`go get github.com/reverendpaco/liner@5f78ad0961435f7f15f8e19d2658fc5c4406cdb8`
+
 
 The following shows a basic usage where `Ctrl-X c` capitalizes the current contents and `Ctrl-X l` lowercases 
 them.
