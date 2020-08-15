@@ -88,6 +88,12 @@ const (
 
 type tabDirection int
 
+type Line struct {
+	Contents       string
+	CtrlXActivated bool
+	NextLetter     rune
+}
+
 const (
 	tabForward tabDirection = iota
 	tabReverse
@@ -591,7 +597,7 @@ func (s *State) yank(p []rune, text []rune, pos int) ([]rune, int, interface{}, 
 // Prompt displays p and returns a line of user input, not including a trailing
 // newline character. An io.EOF error is returned if the user signals end-of-file
 // by pressing Ctrl-D. Prompt allows line editing if the terminal supports it.
-func (s *State) Prompt(prompt string) (string, error) {
+func (s *State) Prompt(prompt string) (Line, error) {
 	return s.PromptWithSuggestion(prompt, "", 0)
 }
 
@@ -600,22 +606,32 @@ func (s *State) Prompt(prompt string) (string, error) {
 // is negative or greater than length of text (in runes). Returns a line of user input, not
 // including a trailing newline character. An io.EOF error is returned if the user
 // signals end-of-file by pressing Ctrl-D.
-func (s *State) PromptWithSuggestion(prompt string, text string, pos int) (string, error) {
+func (s *State) PromptWithSuggestion(prompt string, text string, pos int) (Line, error) {
+	ctrlXEnabled := false
+	nextLetter := ' '
 	for _, r := range prompt {
 		if unicode.Is(unicode.C, r) {
-			return "", ErrInvalidPrompt
+			r := Line{"", false, ' '}
+			return r, ErrInvalidPrompt
 		}
 	}
 	if s.inputRedirected || !s.terminalSupported {
-		return s.promptUnsupported(prompt)
+		r := Line{"", false, ' '}
+		l, e := s.promptUnsupported(prompt)
+		r.Contents = l
+		return r, e
 	}
 	p := []rune(prompt)
 	const minWorkingSpace = 10
 	if s.columns < countGlyphs(p)+minWorkingSpace {
-		return s.tooNarrow(prompt)
+		r := Line{"", false, ' '}
+		l, e := s.tooNarrow(prompt)
+		r.Contents = l
+		return r, e
 	}
 	if s.outputRedirected {
-		return "", ErrNotTerminalOutput
+		r := Line{"", false, ' '}
+		return r, ErrNotTerminalOutput
 	}
 
 	s.historyMutex.RLock()
@@ -638,7 +654,8 @@ func (s *State) PromptWithSuggestion(prompt string, text string, pos int) (strin
 	if len(line) > 0 {
 		err := s.refresh(p, line, pos)
 		if err != nil {
-			return "", err
+			r := Line{"", false, ' '}
+			return r, err
 		}
 	}
 
@@ -649,12 +666,21 @@ restart:
 mainLoop:
 	for {
 		next, err := s.readNext()
+		if s.ctrlXEnabled {
+			s.ctrlXEnabled = false
+			switch v := next.(type) {
+			case rune:
+				r := Line{string(line), true, v}
+				return r, err
+			}
+		}
 	haveNext:
 		if err != nil {
 			if s.shouldRestart != nil && s.shouldRestart(err) {
 				goto restart
 			}
-			return "", err
+			r := Line{"", false, ' '}
+			return r, err
 		}
 
 		historyAction = false
@@ -665,7 +691,8 @@ mainLoop:
 				if s.needRefresh {
 					err := s.refresh(p, line, pos)
 					if err != nil {
-						return "", err
+						r := Line{"", false, ' '}
+						return r, err
 					}
 				}
 				if s.multiLineMode {
@@ -696,7 +723,8 @@ mainLoop:
 			case ctrlD: // del
 				if pos == 0 && len(line) == 0 {
 					// exit
-					return "", io.EOF
+					r := Line{"", false, ' '}
+					return r, io.EOF
 				}
 
 				// ctrlD is a potential EOF, so the rune reader shuts down.
@@ -786,7 +814,8 @@ mainLoop:
 					s.resetMultiLine(p, line, pos)
 				}
 				if s.ctrlCAborts {
-					return "", ErrPromptAborted
+					r := Line{"", false, ' '}
+					return r, ErrPromptAborted
 				}
 				line = line[:0]
 				pos = 0
@@ -828,7 +857,10 @@ mainLoop:
 			case esc:
 				// DO NOTHING
 			// Unused keys
-			case ctrlG, ctrlO, ctrlQ, ctrlS, ctrlV, ctrlX, ctrlZ:
+			case ctrlX:
+				prompt += "(ctrl-x)"
+				s.ctrlXEnabled = true
+			case ctrlG, ctrlO, ctrlQ, ctrlS, ctrlV, ctrlZ:
 				fallthrough
 			// Catch unhandled control codes (anything <= 31)
 			case 0, 28, 29, 30, 31:
@@ -998,7 +1030,8 @@ mainLoop:
 		if s.needRefresh && !s.inputWaiting() {
 			err := s.refresh(p, line, pos)
 			if err != nil {
-				return "", err
+				r := Line{"", false, ' '}
+				return r, err
 			}
 		}
 		if !historyAction {
@@ -1008,7 +1041,8 @@ mainLoop:
 			killAction--
 		}
 	}
-	return string(line), nil
+	r := Line{string(line), ctrlXEnabled, nextLetter}
+	return r, nil
 }
 
 // PasswordPrompt displays p, and then waits for user input. The input typed by

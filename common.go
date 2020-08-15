@@ -34,6 +34,7 @@ type commonState struct {
 	shouldRestart     ShouldRestart
 	noBeep            bool
 	needRefresh       bool
+	ctrlXEnabled      bool
 }
 
 // TabStyle is used to select how tab completions are displayed.
